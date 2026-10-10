@@ -1385,16 +1385,17 @@ func (h *Home) collapseOrNavUp() {
 		h.windowsCollapsed[sid] = true
 		h.rebuildFlatItems()
 		h.moveCursorToSession(sid)
-	} else if item.Type == session.ItemTypeSession && h.sessionHasWindows(item) && !h.windowsCollapsed[item.Session.ID] {
-		h.windowsCollapsed[item.Session.ID] = true
-		h.rebuildFlatItems()
 	} else if item.Type == session.ItemTypeSession && h.sessionHasChildren(item) && !h.parentChildrenCollapsed[item.Session.ID] {
-		// Fold the child list shut (#2631); an already-folded parent falls
-		// through to the group-collapse branch below, keeping the
-		// collapse-or-parent navigation semantics.
+		// Fold the child list shut (#2631) — children are checked BEFORE
+		// window sub-items, mirroring the toggle handler: the fold hides the
+		// whole subtree. An already-folded parent falls through to the
+		// windows/group-collapse branches below (collapse-or-parent).
 		h.parentChildrenCollapsed[item.Session.ID] = true
 		h.rebuildFlatItems()
 		_ = h.saveUIStateErr()
+	} else if item.Type == session.ItemTypeSession && h.sessionHasWindows(item) && !h.windowsCollapsed[item.Session.ID] {
+		h.windowsCollapsed[item.Session.ID] = true
+		h.rebuildFlatItems()
 	} else if item.Type == session.ItemTypeSession {
 		h.groupTree.CollapseGroup(item.Path)
 		h.rebuildFlatItems()
@@ -3136,7 +3137,13 @@ func (h *Home) sessionHasWindows(item session.Item) bool {
 // sessionHasChildren reports whether the row's session is a parent with
 // sub-sessions nested under it in its group (#2631). Orphan sub-sessions
 // whose parent lives in another group render top-level and never fold.
+// In flat sidebar mode the parent-child fold is off entirely: the flat
+// list emits every session by design, so a fold key or badge there would
+// flip state nothing reads (CodeRabbit, #2636).
 func (h *Home) sessionHasChildren(item session.Item) bool {
+	if h.embeddedLayout && h.sidebarMode == sidebarFlat {
+		return false
+	}
 	return h.sessionChildCount(item) > 0
 }
 
@@ -11870,20 +11877,21 @@ func (h *Home) handleMainKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				h.noteGroupToggled(groupPath)
 			} else if item.Type == session.ItemTypeRemoteGroup {
 				h.toggleRemoteGroup(item.RemoteName, item.Path)
-			} else if item.Type == session.ItemTypeSession && h.sessionHasWindows(item) {
-				sid := item.Session.ID
-				h.windowsCollapsed[sid] = !h.windowsCollapsed[sid]
-				h.rebuildFlatItems()
-				h.moveCursorToSession(sid)
 			} else if item.Type == session.ItemTypeSession && h.sessionHasChildren(item) {
-				// Parent-child fold toggle (#2631). Children win over window
-				// sub-items when a row has both: the fold hides the whole subtree
-				// including any window rows the children would show.
+				// Parent-child fold toggle (#2631). Children are checked BEFORE
+				// window sub-items: the fold hides the whole subtree, including
+				// any window rows the children would show — on a row with both,
+				// window folding keeps h/left.
 				sid := item.Session.ID
 				h.parentChildrenCollapsed[sid] = !h.parentChildrenCollapsed[sid]
 				h.rebuildFlatItems()
 				h.moveCursorToSession(sid)
 				_ = h.saveUIStateErr() // view preference; a dropped save self-heals next toggle
+			} else if item.Type == session.ItemTypeSession && h.sessionHasWindows(item) {
+				sid := item.Session.ID
+				h.windowsCollapsed[sid] = !h.windowsCollapsed[sid]
+				h.rebuildFlatItems()
+				h.moveCursorToSession(sid)
 			}
 		}
 		return h, nil

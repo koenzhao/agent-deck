@@ -3417,6 +3417,14 @@ func (h *Home) rebuildFlatItemsAt(now time.Time) {
 		partitioned := make([]session.RemoteSessionInfo, 0, len(sessions))
 		for _, remote := range sessions {
 			if remote.Archived == viewArchived {
+				// #2627: remote rows honor the status filter the way local rows
+				// do. In the archived view the Archived partition IS the filter
+				// (same as local), so the predicate runs only outside it. Old
+				// remotes omit substate/archived — those decode to the zero
+				// status, degraded the same way the status glyph degrades it.
+				if h.statusFilter != "" && !viewArchived && !h.remoteMatchesStatus(h.statusFilter, remote) {
+					continue
+				}
 				partitioned = append(partitioned, remote)
 			}
 		}
@@ -3461,6 +3469,12 @@ func (h *Home) rebuildFlatItemsAt(now time.Time) {
 		}
 		for _, sessions := range remotes {
 			for _, remote := range sessions {
+				// #2627: the status filter narrows the time-fallback the same
+				// way it narrows local sessions above — a row the filter hides
+				// is neither a candidate nor a match.
+				if h.statusFilter != "" && !viewArchived && !h.remoteMatchesStatus(h.statusFilter, remote) {
+					continue
+				}
 				hasCandidates = true
 				if remoteMatchesTime(remote) {
 					hasMatches = true
@@ -25830,6 +25844,16 @@ func (h *Home) matchesStatusFilter(filter, status session.Status) bool {
 			!(h.activeFilterHideStopped && statusBucket(status) == session.StatusStopped)
 	}
 	return statusBucket(status) == filter
+}
+
+// remoteMatchesStatus applies the status-filter predicate to a remote row
+// (#2627). RemoteSessionInfo.Status is the wire string; converting it to
+// session.Status puts remote rows through the same statusBucket mapping the
+// local predicate uses. Old remotes omit substate/archived, and the wire
+// Status for those still decodes to a valid bucket — the row keeps the
+// coarse behavior its glyph already shows, as the issue requires.
+func (h *Home) remoteMatchesStatus(filter session.Status, remote session.RemoteSessionInfo) bool {
+	return h.matchesStatusFilter(filter, session.Status(remote.Status))
 }
 
 // renderFilterBarHint returns the filter bar's keyboard-shortcut hint as

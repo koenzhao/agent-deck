@@ -40,7 +40,7 @@ var remoteRecallOptions = map[string]map[string]bool{
 	"context":  {"tier": true, "budget": true, "json": false},
 	"export":   {"since": true, "cards": false, "json": false},
 	"status":   {"json": false},
-	"timeline": {"json": false, "tail": true, "since": true, "before": true, "limit": true, "agent": true, "v1": false, "sessions": true},
+	"timeline": {"json": false, "tail": true, "since": true, "before": true, "limit": true, "agent": true, "v1": false, "sessions": true, "kinds": true, "skip-empty-body": false},
 	"follow":   {"jsonl": false, "after": true, "status": false, "agent": true, "v1": false},
 }
 

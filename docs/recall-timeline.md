@@ -47,7 +47,7 @@ of the background index sweep and meets the two second local append target.
 ## Rows (default, schema `agent-deck.recall.rows/v2`)
 
 ```
-agent-deck recall timeline <session> --json [--since <cursor> | --before <cursor> --limit N] [--limit N] [--tail N] [--agent <id>]
+agent-deck recall timeline <session> --json [--since <cursor> | --before <cursor> --limit N] [--limit N] [--tail N] [--agent <id>] [--kinds a,b] [--skip-empty-body]
 agent-deck recall follow   <session> --after <cursor|end> --jsonl [--status]
 agent-deck recall timeline --json --transcript <file> --harness claude|codex|pi
 agent-deck recall timeline --json [--tail N] --sessions <id1>,<id2>,...
@@ -91,6 +91,23 @@ changed after a cursor: new rows in `turns`, changes to earlier rows in
 `updates` (merge by id) and ids to drop in `removed`. Paging with
 `--limit`/`--since` until the cursor stops moving yields exactly the full
 timeline. `--agent <id>` returns one Claude sub-agent sidechain.
+
+`--kinds a,b` keeps only those row kinds, and `--skip-empty-body` drops rows
+with no visible text (blank `body`, `summary` and `detail`, no children).
+Both filter on the owner host, before serialization, so a dropped row never
+crosses the wire: on a 400-row session, `--kinds user,assistant` took the
+payload from 193.7 KiB to 4.4 KiB. `--tail`/`--limit` select rows first and
+the filter then drops from that page, so `--kinds user,assistant --tail 400`
+means "the last 400 rows, of which the messages".
+
+A filter can drop the last row of a page, so a filtered answer also carries
+`next_cursor`: the `id` of the last row the read produced *before* filtering.
+That is the boundary a client compares against to see it made progress; it is
+a row id, not a resume token. Resuming still uses `through_cursor`, which
+filtering does not touch: it points at the end of what was read, so
+`--since <through_cursor>` never replays a filtered window. Without a filter
+there is no `next_cursor` and the payload is byte-identical to earlier
+releases.
 
 ### First screens in one call (`--sessions`)
 

@@ -311,6 +311,17 @@ func readRowsTimeline(t *rowsTarget, opts query.RowsOptions) (query.RowsTimeline
 	if !t.direct {
 		result.Source = "index"
 	}
+	// The filter runs here, on the owner host, so a dropped row never crosses
+	// the wire. next_cursor records the pre-filter boundary, so a client can
+	// tell it made progress even when the filter hid the tail row; the resume
+	// token stays through_cursor, which filtering does not touch.
+	if query.RowsFiltered(opts) {
+		if n := len(result.Turns); n > 0 {
+			result.NextCursor = result.Turns[n-1].ID
+		}
+		result.Turns, _ = query.FilterRows(result.Turns, opts)
+		result.Updates, _ = query.FilterRows(result.Updates, opts)
+	}
 	if result.Turns == nil {
 		result.Turns = []query.Row{}
 	}

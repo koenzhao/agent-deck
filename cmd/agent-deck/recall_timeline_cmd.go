@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/asheshgoplani/agent-deck/internal/recall/query"
 )
@@ -20,9 +21,11 @@ func handleRecallTimeline(profile string, args []string) {
 	limit := fs.Int("limit", 0, "Maximum older rows with --before; otherwise stop after N new rows and resume with --since")
 	tail := fs.Int("tail", 0, "Only the last N rows, read from the end of the transcript (fast first paint)")
 	agentID := fs.String("agent", "", "One Claude Code sub-agent sidechain by agent id")
-	sessions := fs.String("sessions", "", fmt.Sprintf("Comma-separated session ids: one call answers each id's timeline (at most %d; only --tail combines with it)", recallTimelineBatchMax))
+	sessions := fs.String("sessions", "", fmt.Sprintf("Comma-separated session ids: one call answers each id's timeline (at most %d; only --tail, --kinds and --skip-empty-body combine with it)", recallTimelineBatchMax))
+	kinds := fs.String("kinds", "", "Comma-separated row kinds to keep: "+strings.Join(query.RowKinds, ",")+" (filtered before serialization; adds next_cursor)")
+	skipEmptyBody := fs.Bool("skip-empty-body", false, "Drop rows with no visible text (blank body, summary and detail, no children)")
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: agent-deck recall timeline <session> --json [--since <cursor> | --before <cursor> --limit N] [--limit N] [--tail N] [--agent <id>]")
+		fmt.Fprintln(fs.Output(), "Usage: agent-deck recall timeline <session> --json [--since <cursor> | --before <cursor> --limit N] [--limit N] [--tail N] [--agent <id>] [--kinds a,b] [--skip-empty-body]")
 		fmt.Fprintln(fs.Output(), "       agent-deck recall timeline --json --transcript <file> --harness claude|codex|pi")
 		fmt.Fprintln(fs.Output(), "       agent-deck recall timeline --json [--tail N] --sessions <id1>,<id2>,...   (batch: one entry per id, at most 50)")
 		fmt.Fprintln(fs.Output(), "       agent-deck recall timeline <session> --json --v1   (slice-6 turn shape)")
@@ -33,10 +36,19 @@ func handleRecallTimeline(profile string, args []string) {
 	if !parseRecallFlags(fs, args) {
 		return
 	}
+	opts := query.RowsOptions{Since: *since, Before: *before, Limit: *limit, Tail: *tail, AgentID: *agentID, SkipEmptyBody: *skipEmptyBody}
+	if *kinds != "" {
+		parsed, err := query.ParseRowKinds(*kinds)
+		if err != nil {
+			NewCLIOutput(true, false).Error(err.Error(), ErrCodeInvalidOperation)
+			exitCLI(2)
+		}
+		opts.Kinds = parsed
+	}
 	batch := false
 	fs.Visit(func(f *flag.Flag) { batch = batch || f.Name == "sessions" })
 	if batch {
-		handleRecallTimelineBatch(profile, fs, *sessions, *jsonOutput, *tail)
+		handleRecallTimelineBatch(profile, fs, *sessions, *jsonOutput, opts)
 		return
 	}
 	out := NewCLIOutput(*jsonOutput, false)
@@ -44,13 +56,18 @@ func handleRecallTimeline(profile string, args []string) {
 		fs.Usage()
 		exitCLI(2)
 	}
-	opts := query.RowsOptions{Since: *since, Before: *before, Limit: *limit, Tail: *tail, AgentID: *agentID}
 	if err := query.ValidateRowsOptions(opts); err != nil {
 		out.Error(err.Error(), ErrCodeInvalidOperation)
 		exitCLI(2)
 	}
 	if *rf.v1 && *before != "" {
 		out.Error("recall timeline: --before is unsupported with --v1", ErrCodeInvalidOperation)
+		exitCLI(2)
+	}
+	// --v1 answers slice-6 turns, not rows: a row filter there would be
+	// silently ignored, so refuse it instead.
+	if *rf.v1 && (len(opts.Kinds) > 0 || opts.SkipEmptyBody) {
+		out.Error("recall timeline: --kinds and --skip-empty-body are unsupported with --v1", ErrCodeInvalidOperation)
 		exitCLI(2)
 	}
 	if !*rf.v1 {

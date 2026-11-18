@@ -48,7 +48,14 @@ type RowsTimeline struct {
 	Removed       []string    `json:"removed,omitempty"`
 	ThroughCursor string      `json:"through_cursor,omitempty"`
 	BeforeCursor  string      `json:"before_cursor,omitempty"`
-	Status        *LiveStatus `json:"status,omitempty"`
+	// NextCursor is the id of the last row the read produced before a
+	// --kinds/--skip-empty-body filter dropped any: the boundary a client
+	// compares against to see it made progress when the filter hid the tail.
+	// It is a row id, not a resume token; resuming uses ThroughCursor, which
+	// filtering leaves alone. Absent without a filter, which keeps the
+	// unfiltered payload byte-identical.
+	NextCursor string      `json:"next_cursor,omitempty"`
+	Status     *LiveStatus `json:"status,omitempty"`
 }
 
 // RowsOptions bounds a timeline read.
@@ -59,12 +66,17 @@ type RowsTimeline struct {
 //   - Tail returns only the last N rows, reading backwards in growing byte
 //     windows so a 100 MB transcript answers from its end.
 //   - AgentID returns one Claude Code sub-agent sidechain.
+//   - Kinds keeps only those row kinds and SkipEmptyBody drops rows with no
+//     visible text; both filter before serialization, and either one makes the
+//     result carry NextCursor.
 type RowsOptions struct {
-	Since   string
-	Before  string
-	Limit   int
-	Tail    int
-	AgentID string
+	Since         string
+	Before        string
+	Limit         int
+	Tail          int
+	AgentID       string
+	Kinds         []string
+	SkipEmptyBody bool
 }
 
 // ValidateRowsOptions rejects combinations that cannot describe one page.

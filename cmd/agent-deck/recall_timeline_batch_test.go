@@ -146,6 +146,8 @@ func TestRecallTimelineBatch_RemoteForwarding(t *testing.T) {
 	for _, args := range [][]string{
 		{"timeline", "--json", "--tail", "40", "--sessions", "a,b,c"},
 		{"timeline", "--json", "--tail=40", "--sessions=a,b,c"},
+		{"timeline", "--json", "--kinds", "user,assistant", "--sessions", "a,b"},
+		{"timeline", "--json", "--kinds=user", "--skip-empty-body", "--sessions", "a,b"},
 	} {
 		if err := validateRemoteRecallArgs(args); err != nil {
 			t.Fatalf("%v refused: %v", args, err)
@@ -156,6 +158,17 @@ func TestRecallTimelineBatch_RemoteForwarding(t *testing.T) {
 	}
 	if err := validateRemoteRecallArgs([]string{"follow", "--jsonl", "--after", "end", "--sessions", "a,b"}); err == nil {
 		t.Fatal("--sessions forwarded on follow")
+	}
+	// The kind filter is forwarded too: the saving only exists if the filter
+	// runs where the transcript lives.
+	if err := validateRemoteRecallArgs([]string{"timeline", "sess", "--json", "--kinds", "user,assistant"}); err != nil {
+		t.Fatalf("--kinds refused for forwarding: %v", err)
+	}
+	if err := validateRemoteRecallArgs([]string{"timeline", "sess", "--json", "--kinds=user", "--skip-empty-body"}); err != nil {
+		t.Fatalf("--skip-empty-body refused for forwarding: %v", err)
+	}
+	if err := validateRemoteRecallArgs([]string{"follow", "--jsonl", "--after", "end", "--kinds", "user"}); err == nil {
+		t.Fatal("--kinds forwarded on follow, which has no filter")
 	}
 }
 
